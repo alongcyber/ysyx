@@ -49,11 +49,14 @@ static int cmd_c(char *args) {
 
 
 static int cmd_q(char *args) {
+  nemu_state.state = NEMU_QUIT;
   return -1;
 }
 
 static int cmd_help(char *args);
-
+static int cmd_s(char *args);
+static int cmd_info(char *args);
+static int cmd_x(char *args);
 static struct {
   const char *name;
   const char *description;
@@ -64,7 +67,12 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
 
   /* TODO: Add more commands */
-
+  {"s","step inside",cmd_s},
+  {"info","info r:print the value of all register \
+info w: print the information of watchpoint\n",cmd_info},
+  {"x","x N EXPR:Scan the memory",cmd_x},
+  {"p","p EXPR:Print the value of the expression",NULL},
+  
 };
 
 #define NR_CMD ARRLEN(cmd_table)
@@ -90,6 +98,66 @@ static int cmd_help(char *args) {
     printf("Unknown command '%s'\n", arg);
   }
   return 0;
+}
+static int cmd_s(char*args){
+  char *arg = strtok(NULL, " ");
+  if(arg == NULL){
+    /* no argument given*/
+    cpu_exec(1);
+  }
+  else{
+    int n = atoi(arg);
+    if(n <= 0){
+      printf("Invalid argument\n");
+      return 0;
+    }
+    cpu_exec(n);
+  }
+  return 0;
+}
+
+static int cmd_info(char* args){
+  char *arg = strtok(NULL, " ");
+  if(arg == NULL){
+    printf("Invalid argument\n");
+  }
+  else if(strcmp(arg,"r") == 0){
+    isa_reg_display();
+  }
+  else if(strcmp(arg,"w") == 0){
+    // display_wp();
+    return 0;
+  }
+  else{printf("Unknown command '%s'\n",arg);}
+  return 0;
+}
+
+static int cmd_x(char *args){
+  char *arg = strtok(NULL, " ");
+  if(arg == NULL){
+    printf("Invalid argument\n");
+    printf("x N EXPR:Scan the memory\n");
+  }
+  else{
+    int n = atoi(arg);
+    if(n <= 0){
+      printf("Invalid argument\n");
+      return 0;
+    }
+    arg = strtok(NULL, " ");
+    vaddr_t addr = expr(arg,NULL);
+    //use magic macro to get the len 
+    for(int i = 0;i < n;i++){
+      printf("0x%08x: ",addr);
+      for(int j = 0;j < 4;j++){
+        printf("0x%08x ",vaddr_read(addr,4));
+        addr += 4;
+      }
+      printf("\n");
+    }
+  }
+  return 0;
+
 }
 
 void sdb_set_batch_mode() {
