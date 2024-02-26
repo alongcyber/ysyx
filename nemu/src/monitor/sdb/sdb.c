@@ -17,6 +17,7 @@
 #include <cpu/cpu.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <memory/vaddr.h>
 #include "sdb.h"
 
 static int is_batch_mode = false;
@@ -57,6 +58,7 @@ static int cmd_help(char *args);
 static int cmd_s(char *args);
 static int cmd_info(char *args);
 static int cmd_x(char *args);
+static int cmd_p(char *args);
 static struct {
   const char *name;
   const char *description;
@@ -71,7 +73,7 @@ static struct {
   {"info","info r:print the value of all register \
 info w: print the information of watchpoint\n",cmd_info},
   {"x","x N EXPR:Scan the memory",cmd_x},
-  {"p","p EXPR:Print the value of the expression",NULL},
+  {"p","p EXPR:Print the value of the expression",cmd_p},
   
 };
 
@@ -145,7 +147,8 @@ static int cmd_x(char *args){
       return 0;
     }
     arg = strtok(NULL, " ");
-    vaddr_t addr = expr(arg,NULL);
+    // vaddr_t addr = expr(arg,NULL);
+    vaddr_t addr = 0;
     //use magic macro to get the len 
     for(int i = 0;i < n;i++){
       printf("0x%08x: ",addr);
@@ -160,6 +163,24 @@ static int cmd_x(char *args){
 
 }
 
+static int cmd_p(char *args){
+  char *arg = strtok(NULL, " ");
+  if(arg == NULL){
+    printf("Invalid argument\n");
+    printf("p EXPR:Print the value of the expression\n");
+  }
+  else{
+    bool success = true;
+    sword_t result = expr(arg,&success);
+    if(success){
+      printf("%d\n",result);
+    }
+    else{
+      printf("Invalid expression\n");
+    }
+  }
+  return 0;
+}
 void sdb_set_batch_mode() {
   is_batch_mode = true;
 }
