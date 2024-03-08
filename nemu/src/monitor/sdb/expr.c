@@ -20,10 +20,13 @@
  */
 #include <regex.h>
 
+
+
 static word_t eval(int p,int q, bool *sucess);
 static word_t eval_token(int p,bool *sucess);
 static word_t calbinary(word_t val1, word_t val2, int op, bool *sucess);
 static word_t calunary(word_t val,int op,bool *sucess);
+
 /* Start from 256, offset from ASCII character table
 */
 enum {
@@ -71,6 +74,18 @@ static struct rule {
 };
 
 #define NR_REGEX ARRLEN(rules)
+#define OFTYPES(type, types) oftypes(type, types, ARRLEN(types))
+
+static int bound_types[] = {')',TK_NUM,TK_HEX,TK_REG}; // boundary for binary operator
+static int nop_types[] = {'(',')',TK_NUM,TK_HEX,TK_REG}; // not operator type
+static int op1_types[] = {TK_NEG, TK_DEREF}; // unary operator type
+static int logic_types[] = {TK_EQ,TK_NEQ,TK_GT,TK_LT,TK_LE,TK_GE,TK_AND,TK_OR}; // logic operator type
+static bool oftypes(int type, int types[], int size) {
+  for (int i = 0; i < size; i++) {
+    if (type == types[i]) return true;
+  }
+  return false;
+}
 
 static regex_t re[NR_REGEX] = {};
 
@@ -126,33 +141,31 @@ static bool make_token(char *e) {
         tokens[nr_token].type = rules[i].token_type;
         switch (rules[i].token_type) {
           case TK_NUM:
-            strncpy(tokens[nr_token].str,substr_start,substr_len);
-            tokens[nr_token].str[substr_len] = '\0';
-            break;
           case TK_HEX:
-            strncpy(tokens[nr_token].str,substr_start,substr_len);
-            tokens[nr_token].str[substr_len] = '\0';
-            break;
           case TK_REG:
             strncpy(tokens[nr_token].str,substr_start,substr_len);
             tokens[nr_token].str[substr_len] = '\0';
+            break;   
+          case '*': case '-':
+          if(nr_token==0||!OFTYPES(tokens[nr_token-1].type,bound_types)){
+            switch (rules[i].token_type)
+            {
+            case '-':tokens[nr_token].type = TK_NEG;break;
+            case '*':tokens[nr_token].type = TK_DEREF;break;
+            }
+          }
+          break;
+          default:
+            if(OFTYPES(rules[i].token_type,logic_types)){
+            strncpy(tokens[nr_token].str,substr_start,substr_len);
+            tokens[nr_token].str[substr_len] = '\0';
             break;
+            }
         }
         nr_token++;
         break;
       }
     }
-    for (int i = 0; i < nr_token; i++)
-    {
-      if(tokens[i].type=='*' && (i==0 || ((tokens[i-1].type!=TK_NUM) || (tokens[i-1].type=='(')))){
-        tokens[i].type = TK_DEREF;
-      }
-      if(tokens[i].type=='-' && (i==0 || ((tokens[i-1].type!=TK_NUM) || (tokens[i-1].type=='(')))){
-        tokens[i].type = TK_NEG;
-      }
-
-    }
-    
 
     if (i == NR_REGEX) {
       printf("no match at position %d\n%s\n%*.s^\n", position, e, position, "");
@@ -176,45 +189,56 @@ static bool check_parentgeses(int p,int q){
     return true;
 }
 // find the main operator 
-static int prioty(int p,int q){
+static int priority(int p,int q){
   int ret = -1, bar = 0, op_type = 0;
-  for (int i = p; i <= q; i++) {
-    if (tokens[i].type == TK_NUM) {
-      continue;
-    }
-    if (tokens[i].type == '(') {
+  for(int i=p;i<=q;i++){
+    if(tokens[i].type == '('){
       bar++;
-    } else if (tokens[i].type == ')') {
-      if (bar == 0) {
+      continue;
+    }else if(tokens[i].type == ')'){
+      if(bar==0){
         return -1;
       }
       bar--;
-    } else if (bar > 0) {
       continue;
-    } else {
-      int tmp_type = 0;
-      switch (tokens[i].type) {
-      case TK_NEG: case TK_DEREF: {
-        tmp_type = 1; 
+    }else if(OFTYPES(tokens[i].type,nop_types)){
+      continue;
+    }else if(bar>0){
+      continue;
+    }else{
+      int tmp_pre = 0;
+      // deref,neg>logic>relationship>*/>+-
+      switch (tokens[i].type)
+      {
+      case TK_DEREF:case TK_NEG:
+        tmp_pre = 1;
         break;
+      case TK_AND:case TK_OR:
+        tmp_pre = 2;
+        break;
+      case TK_EQ:case TK_NEQ:case TK_GT:case TK_LT:case TK_LE:case TK_GE:
+        tmp_pre = 3;
+        break;
+      case '*':case '/':
+        tmp_pre = 4;
+        break;
+      case '+':case '-':
+        tmp_pre = 5;
+        break;
+      default:
+        return -1;
       }
-      case '*': case '/': tmp_type = 2; break;
-      case '+': case '-': tmp_type = 3; break;
-      default: assert(0);
-      }
-      if ((tmp_type >= op_type)&&(tmp_type!=1)) {
-        op_type = tmp_type;
-        ret = i;
-      }else if((tmp_type>op_type)&&(tmp_type==1)){
-        op_type = tmp_type;
+      //1-1-1,前面的优先级高,**q后面的*优先级
+      //判断是否为右结合的运算符
+      if(tmp_pre>op_type||(tmp_pre==op_type&&!OFTYPES(tokens[i].type,op1_types))){
+        op_type = tmp_pre;
         ret = i;
       }
     }
   }
-  if (bar != 0) return -1;
+  if(bar!=0)return -1;
   return ret;
 }
-
 static word_t eval(int p,int q, bool *sucess){
   *sucess = true;
   if(p>q){
@@ -225,13 +249,13 @@ static word_t eval(int p,int q, bool *sucess){
   }else if(check_parentgeses(p,q)==true){
     return eval(p+1,q-1,sucess);
   }else{
-    int op = prioty(p,q);
+    int op = priority(p,q);
     if(op<0){
       *sucess = false;
       return 0;
     }
     bool flag1,flag2;
-    word_t  val1 = eval(p,op-1,&flag1);
+    word_t val1 = eval(p,op-1,&flag1);
     word_t val2 = eval(op+1,q,&flag2);
     if(flag2==false){
       *sucess = false;
@@ -239,6 +263,9 @@ static word_t eval(int p,int q, bool *sucess){
     }
     if(flag1==true){
       word_t ret = calbinary(val1,val2,tokens[op].type,sucess);
+      return ret;
+    }else{
+      word_t ret = calunary(val2,tokens[op].type,sucess);
       return ret;
     }
   }
@@ -258,6 +285,9 @@ static word_t eval_token(int p,bool *sucess){
   {
   case TK_NUM:
     return strtol(tokens[p].str,NULL,10);
+    break;
+  case TK_HEX:
+    return strtol(tokens[p].str,NULL,16);
     break;
   case TK_REG:
     return isa_reg_str2val(tokens[p].str,sucess); 
@@ -298,7 +328,7 @@ static word_t calunary(word_t val,int op,bool *sucess){
   switch (op)
   {
   case TK_DEREF:
-    return vaddr_read(val,4);
+    return vaddr_read(val,MUXDEF(CONFIG_RV64,8,4));
   case TK_NEG:
     return -val;
   default:

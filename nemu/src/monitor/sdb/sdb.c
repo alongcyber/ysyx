@@ -133,34 +133,38 @@ static int cmd_info(char* args){
   else{printf("Unknown command '%s'\n",arg);}
   return 0;
 }
-
+// The vaddr_read(expr,4) depends on 4 (riscv32)
 static int cmd_x(char *args){
-  char *arg = strtok(NULL, " ");
-  if(arg == NULL){
+  char *arg1 = strtok(args, " ");
+  if(arg1 == NULL){
     printf("Invalid argument\n");
     printf("x N EXPR:Scan the memory\n");
+    return 0;
   }
-  else{
-    int n = atoi(arg);
-    if(n <= 0){
-      printf("Invalid argument\n");
-      return 0;
+  char *arg2 = strtok(NULL, " ");
+  if(arg2 == NULL){
+    printf("Invalid argument\n");
+    printf("x N EXPR:Scan the memory\n");
+    return 0;
+  }
+
+  int n = strtol(arg1,NULL,10);
+  vaddr_t expr = strtol(arg2,NULL,16);
+    int i, j;
+  for (i = 0; i < n;) {
+    // Makes it easier for the program 
+    //to run on machines with different word widths.
+    int len = MUXDEF(CONFIG_RV64, 8, 4);
+    int width = MUXDEF(CONFIG_RV64, 18, 10);
+    printf(ANSI_FMT("%#0*x: ", ANSI_FG_CYAN),width,expr);
+    for (j = 0; i < n && j < len; i++, j++) {
+      word_t w = vaddr_read(expr, len);
+      expr += len;
+      printf("%#0*x ",width,w);
     }
-    arg = strtok(NULL, " ");
-    // vaddr_t addr = expr(arg,NULL);
-    vaddr_t addr = 0;
-    //use magic macro to get the len 
-    for(int i = 0;i < n;i++){
-      printf("0x%08x: ",addr);
-      for(int j = 0;j < 4;j++){
-        printf("0x%08x ",vaddr_read(addr,4));
-        addr += 4;
-      }
-      printf("\n");
-    }
+    puts(""); 
   }
   return 0;
-
 }
 
 static int cmd_p(char *args){
